@@ -1,0 +1,4 @@
+interface:
+  display_name: "数学证明检查skill"
+  short_description: "Rigorous review of existing mathematical proofs"
+  default_prompt: "严格审查我提供的数学命题及其现有证明。逐步按 A--E 分类，不补写证明或添加假设，并给出总体判断、三个最严重问题和优先检查点。"

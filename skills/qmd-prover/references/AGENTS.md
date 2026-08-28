@@ -1,0 +1,247 @@
+# Canonical qmd-prover project contract
+
+Copy the managed block below into the root `AGENTS.md` of every mathematical project that uses qmd-prover. Keep the block unchanged. Add project-specific organization, notation, and writing rules outside the managed block.
+
+<!-- qmd-prover-contract:start version=28 -->
+
+## Contents
+
+- [Project setup](#project-setup)
+- [External mathematical basis](#external-mathematical-basis)
+- [Verification settings](#verification-settings)
+- [qmd-prover contract](#qmd-prover-contract)
+- [Rendered document](#rendered-document)
+- [Proof development in the project](#proof-development-in-the-project)
+- [Verification discipline](#verification-discipline)
+- [Agent workflow](#agent-workflow)
+
+## Project setup
+
+The user normally adds the `qmd-prover` skill and asks the agent in natural language to initialize the current project. The engine is the `qmd-prover` command, installed once on the host's `PATH`; the skill supplies these instructions. Run it from the project root:
+
+```bash
+qmd-prover init
+```
+
+If the command is not found, the tool is not installed — install it as described in the skill's `SKILL.md` before continuing.
+
+The command reports any existing `AGENTS.md`, QMD sources, Quarto configuration, `.qmd-prover` state, and external-basis mode. If it returns `intent-required`, summarize what exists and ask whether the user wants to adopt those files in place, inspect them first, or leave them unchanged. Run `--adopt-existing` only after the user chooses adoption.
+
+With no existing project content, the command creates a root `AGENTS.md` with the canonical managed block. It is idempotent when the current block is already present. If `AGENTS.md` exists without the block, preserve it and ask before rerunning with `--append-contract`. If it contains an older or different managed block, ask before using `--sync-contract`; synchronization replaces only that block. Put local project rules outside the managed block.
+
+Whenever it writes, the command also scaffolds `.qmd-prover/` and, if the project has no Quarto configuration at all, a `_quarto.yml` that renders the project as a book. An existing Quarto configuration is preserved untouched; the result reports which happened.
+
+Setup requires no QMD scaffold or initial theorem, and proving a goal requires no per-goal setup either: a protected goal with no proof yet is simply open.
+
+## External mathematical basis
+
+Before writing or checking mathematics, read `.qmd-prover/.external.qmd` if it exists. It is project-owned ordinary QMD controlling which results may be taken from outside the project:
+
+| State | Meaning |
+|---|---|
+| file absent | External results are unrestricted. Identify them precisely and check every hypothesis. |
+| file present but whitespace-only | Use no external mathematical results; develop every needed result in the project. |
+| file has content | Use only the external results or classes of results allowed by that content. |
+
+Equivalently: An absent file permits external mathematics subject to precise hypothesis checks; a whitespace-only file permits none; a nonempty file permits only its stated basis.
+
+The agent may revise this file when the user's request or the developing proof context requires a different external basis, but it must make that change explicit. The exact content is verifier context. Any change invalidates affected verification cache keys and requires the relevant facts to be checked again.
+
+The external basis is the only channel for outside mathematical premises. It does not create semantic graph nodes; every in-project premise is instead an ordinary `@id` dependency subject to import scope.
+
+## Verification settings
+
+Who checks the mathematics, and how strictly, is set in `.qmd-prover/config.yml` under `verification`; the skill's configuration reference defines every key, its accepted values, and its cost. Read the current file before proof work, choose these settings deliberately with the user rather than accepting whatever was scaffolded, and say which backend and which strictness levels were in force whenever you report a result.
+
+Choose the backend from what the host actually has: `qmd-prover doctor` reports which CLI resolves and whether it is available. When both bundled adapters are usable, prefer the one that is *not* the agent developing the proofs, so the referee is a different system from the author.
+
+Then raise strictness in stages as confidence grows, changing the settings only at a stage boundary:
+
+1. **While the route is still being searched**, set `citations`, `rigor`, and `rigor-disprove` to `lenient` and keep `effort` default. A correct but informal argument is then accepted, so the verifier answers the question that matters at this stage — does this approach work at all — instead of returning long formality reports on steps that may be discarded tomorrow.
+2. **Once the route holds end to end** and each proof is believed sound, move all three to `standard` and repair what the stricter pass finds. Do this before treating any result as settled: a `lenient` pass is weak evidence of rigor, and it is the point of the exercise to find the formality failures while they are still cheap to fix.
+3. **When preparing the development for publication or handover**, use `strict` with a high `effort`, and expect more rejections and more tokens per check.
+
+Never quietly walk a level back down to make a rejection disappear. If a proof fails at `standard`, repair the proof; lowering strictness only hides the finding, and re-lowering re-verifies the whole project anyway. `rigor-disprove` matters only once the project actually argues that a statement is false.
+
+## qmd-prover contract
+
+Every QMD file in the project is semantic mathematics compiled into one dependency graph; `.qmd-prover/` holds only derived tool state. Protected goal IDs begin `thm-main-`; every registered goal has exactly the classes `.theorem .goal`, a nonempty human-readable `name`, an ISO `date`, and a nonempty statement. Preserve its ID, `name`, classes, hypotheses, quantifiers, and statement body exactly. Edit pre-existing user files cautiously and only as the developing mathematics requires; never reformat prose that carries no semantic block.
+
+A semantic declaration is a fenced Div with one stable ID, exactly one kind class, a nonempty `name`, an ISO introduction `date`, and a nonempty body. Its ID prefix must match its kind:
+
+| Block | ID | Discipline |
+|---|---|---|
+| `.definition` | `def-*` | Introduce a term, object, or notation. The body is its construction; `@id` citations there are construction dependencies. Put any existence, uniqueness, or well-definedness argument in a linked proof. |
+| `.lemma` | `lem-*` | State an auxiliary result. A lemma has the same proof standard as every other result. |
+| `.proposition` | `prp-*` | State a useful standalone result that is not presented as a principal theorem. The distinction is expository only. |
+| `.theorem` | `thm-*` | State a principal result and justify it in a separate linked proof. |
+| `.corollary` | `cor-*` | State a consequence, but cite the earlier result explicitly in its linked proof. The label creates no dependency. |
+| `.proof` | none | Justify exactly one declaration. Give it no ID; set `of` to the declaration ID and cite every logical dependency with `@id` at its point of use. |
+
+A definition may have a linked proof when its construction needs justification. Every non-definition candidate needs one nonempty linked proof. A declaration and its linked proof normally remain in the same QMD file. The exception is a protected main goal: its declaration stays in the user's note, while its linked proof may live in any project file, such as `workspace/main-proof.qmd`.
+
+Cite the defining declaration of any specialized term at its first load-bearing use. When a definition body or a linked proof relies on a term, object, or notation that is not standard mathematical vocabulary, cite its `@def-id` — or the `@id` of whatever result fixes it — at that point, so the dependency is recorded and the verifier can resolve the term against the cited construction. Standard vocabulary needs no citation, and the verifier is the authority on what counts as standard: the `verification.citations` setting (`lenient`, `standard`, or `strict`) governs how aggressively it scrutinizes terms and reports an uncited non-standard term as a gap, while `verification.rigor` governs how completely each proof step must be spelled out and `verification.rigor-disprove` does the same for a proposed refutation.
+
+An `@id` citation records a logical dependency but does not make a declaration from another file available. Same-file citations need no scope metadata. Every cross-file dependency requires both of these steps:
+
+1. In the producer file, export the declaration under its exact semantic ID:
+
+```markdown
+::: {#lem-local-class-group-finite .lemma name="Local class group is finite" date="2026-07-12" export="lem-local-class-group-finite"}
+The local class group is finite.
+:::
+
+::: {.proof of="lem-local-class-group-finite"}
+Give the proof here.
+:::
+```
+
+2. In the consumer file, import that exact ID in the front matter:
+
+```yaml
+---
+qmd-prover:
+  imports:
+    - from: foundations/local-groups.qmd
+      use:
+        - lem-local-class-group-finite
+---
+```
+
+`from` is relative to the importing QMD file. Each `use` entry is one semantic ID, the producer must set `export` to that same ID, and wildcard or implicit imports are forbidden. Importing grants scope but does not itself declare a logical dependency: cite the imported result at its point of use. Do not add a separate `Uses` list. References in surrounding prose are navigational, and bibliographic citations such as `[@rudin1976]` remain ordinary Quarto citations.
+
+In schematic form, the producer uses `export="<same-ID>"`, and the consumer imports that exact ID; `from` is relative to the consumer file.
+
+Every explicit semantic ID is globally unique across the project. A linked `.proof of="thm-main-ID"` is an overlay for the protected target and is not a second declaration; never redeclare that target. Any fact may cite any other project fact, including a protected main goal, subject to the import scope rules above; global composition keeps dependents blocked until every cited fact is itself globally verified.
+
+Workflow state for a proof lives in attributes on its `.proof` div, never in body prose. There are no reserved body markers: `OPEN`, `REJECTED`, `DISPROVED`, `VERIFIED`, and `REVOKED` are ordinary words with no meaning anywhere in QMD source. A definition may not carry `.disproof`; challenge an existence, uniqueness, or well-definedness claim in the linked theorem-like result that states it.
+
+| Attribute | Written by | Meaning |
+|---|---|---|
+| _none_ | — | An ordinary candidate, checked by default. |
+| `.disproof` | author | The proof is a proposed counterexample or refutation of the exact theorem-like statement, checked in refutation mode. Conditional evidence until locally checked and globally composed. |
+| `.draft` | author | The proof is deliberately unfinished. It is never sent to the verifier and the fact stays `open`. Remove the mark when the proof is ready to be checked. |
+| `.assumed` | author | The fact is taken as given: never sent to the verifier, composed as `verified`, and recorded in the assumption footprint of everything that rests on it. On a `.proof` div with content the argument is trusted while its citations stay obligations; on a result div with no proof block the statement itself is trusted and the fact depends on nothing. Use it only for a claim you are prepared to stand behind unchecked, never for one that is merely unfinished. |
+| `.abandon` | author | The proof is detached from its result and kept only for memory: never linked, never a competing proof, never checked. On a result div instead, it retires the whole fact. |
+| `status` | engine | Display-only projection of the fact's local verdict (`verified`, `disproved`, or `rejected`), written by inspection. Never hand-write it; the engine overwrites or clears it and never reads it back. |
+
+When more than one applies, `.abandon` outranks `.draft`, which outranks `.assumed`, which outranks `.disproof`. A definition or an assumed statement carries its attributes on its own div, because it has no proof block. `.assumed` may not be combined with `.draft` (a fact is taken as given or is unfinished, not both) or with `.disproof`; either collision makes the fact `broken`.
+
+A proof carrying `.disproof` must give the actual counterexample or refutation, check the hypotheses, and explain why the stated conclusion fails. The verifier checks it conditionally on the exact direct dependency statements. A locally accepted refutation is conditional evidence; it becomes globally disproved only when machine analysis also establishes that its complete dependency closure is globally verified. A failed refutation is locally rejected. The verifier may also discover and report a counterexample while checking an ordinary candidate, without changing its QMD source.
+
+Verification state lives in the project's exact verification cache and published snapshot as separate mechanical, local conditional, and global fields. Inspection also projects each checked fact's local verdict into a display-only `status` attribute on its div, but that attribute is excluded from every content hash, the verifier packet, the cache key, and the snapshot identity, and is never read back — so writing it can never change what is checked. Read global state from inspection, never from the `status` attribute.
+
+## Rendered document
+
+Every QMD file has two readers: the compiler, which checks the mathematics, and Quarto, which renders the document a person reads. A file can satisfy the first and still render wrongly, so these rules are part of writing the source, not a later formatting pass.
+
+Write inline mathematics as `$…$` and display mathematics as `$$…$$` with the delimiters on their own lines. Never write `\(…\)` or `\[…\]`: the compiler accepts those, so every check still passes, but Quarto does not read single-backslash delimiters and renders the formula as literal parentheses or brackets. Convert any file that still uses them when you next edit it — except a protected main statement, which is the user's text: report the delimiters and let the user decide, since rewriting them changes the statement and breaks its lock.
+
+`init` writes a `_quarto.yml` that renders the project as a Quarto book into `.qmd-prover/site/book`. Keep that layout: a book is the only Quarto layout in which result numbering runs across the whole project and an `@id` reference resolves to a declaration in another file. Rendered as separate documents instead, each file numbers its results from 1 and every cross-file reference renders as a question mark.
+
+That configuration belongs to the project and qmd-prover never rewrites it, so its chapter list is yours to maintain. Add every QMD file you create to `book.chapters` in reading order and remove the entry when you delete the file. The first chapter is the book landing page and must be `index.qmd`; create one when the project has none. A file missing from the list is still compiled, checked, and part of the dependency graph — it is simply absent from the rendered book, and every reference into it renders as a question mark.
+
+## Proof development in the project
+
+Any file in any folder of the project is part of the same unified mathematics; folders are organizational structure for humans and agents, never a semantic boundary. By convention, put new agent-created definitions, intermediate results, proof attempts, calculations, examples, counterexamples, and planning notes under a `workspace/` folder in the project root, and organize files inside it however best serves the argument — by theme, by goal, or flat. Local project policy may suggest folder principles; imports and citations work identically across any layout.
+
+- Maintain a progress note with the active route, proved frontier, open dependencies, and abandoned approaches when the development is large enough to need one.
+- Put semantic definitions and intermediate results with their linked proofs in coherent subject QMD files.
+- Put only the linked proof of a protected main goal in its proof overlay file, such as `workspace/main-proof.qmd`; do not repeat or rewrite the theorem.
+- Follow every unproved dependency until it has its own proof. A plan, example, computation, or prose sketch is not a completed proof.
+- Keep a failed route when it is useful for future work, but add `.abandon` to its `.proof` div so it is detached from its result and cannot silently become an active premise.
+- Mark a proof you are still writing with `.draft` so it is not sent to the verifier, and remove the mark when it is ready to be checked. Mark `.assumed` only a fact you are prepared to stand behind unchecked; expect it in the assumption footprint of every goal above it.
+- When a precise counterexample or refutation shows that a theorem-like statement is false, keep the statement unchanged, add `.disproof` to its linked `.proof` div, and submit the refutation to inspection.
+
+After each coherent batch of semantic-QMD changes, run the narrowest useful inspection:
+
+```bash
+qmd-prover inspect fact @ID
+qmd-prover inspect path PATH
+qmd-prover inspect project
+```
+
+Fact and path inspection select the facts needed for the requested global result: the selected facts and their transitive local dependency closure. Every selected fact receives an independent local check when its exact target, proof, and direct dependency statements can be materialized. Reverse dependencies and unrelated facts are not checked. A full project inspection checks every fact.
+
+Local verifier decisions, globally composed results, and refutation evidence remain under `.qmd-prover/` as persistent project state for later inspection and future paper-building. Never copy a proof, refutation, or the engine-written `status` attribute into a protected statement.
+
+## Verification discipline
+
+Passing one layer does not imply passing another:
+
+| Layer | Enforced by | Covers |
+|---|---|---|
+| Mechanical | Compiler, project index, and inspector | Main-goal shape and locks, declaration shape, dates, IDs, imports, references, proof association, global uniqueness, dependency cycles, and snapshot freshness. This layer never reads an AI verdict. |
+| Local conditional | Independent external verifier | Assuming the exact direct dependency statements are true, whether the submitted proof establishes the exact target, or whether the submitted refutation defeats it. The verifier does not inspect dependency proofs or states. |
+| Global composition | Inspector over the dependency graph | A result is globally verified only when its mechanical layer passes, its local proof is accepted, and every direct dependency is globally verified. Cycles and unresolved edges make a fact `broken`, which prevents global verification. |
+| Agent conduct | This contract | Project ownership, protected goals, the `workspace/` layout convention, accurate reporting, and response to verification findings. |
+
+Machine dependency analysis and local AI verification have separate state. Machine analysis always builds the available graph and reports existence, scope, import/export, cycle, and source diagnostics without consulting AI. Local verification assumes only the supplied direct dependency conclusions and checks the proof that is actually stored; an unverified, rejected, or `broken` upstream proof does not suppress this local check. Only the verifier produces `verified`, `disproved`, or `rejected`; the mechanical layer may withdraw a recorded verdict when its inputs change, but never grants one. A local proof is accepted only with `verdict: "correct"`, no critical errors, and no gaps that the configured `rigor` treats as blocking. A local refutation is accepted only with `verdict: "disproved"`, a nonempty independently checkable refutation, no critical errors, and no gaps that the configured `rigor-disprove` treats as blocking. Critical errors always block; only `strict` rigor makes reported gaps block.
+
+Only unbroken facts are sent to the verifier, and only when they have content to check. A fact with no proof block, an empty proof block, or a `.draft` proof is `open` and costs nothing. An abandoned fact resolves no references, contributes no dependency edges, and is never checked; it keeps its ID, so an ID hidden inside an abandoned block still collides with a live one.
+
+The local cache key contains the target statement or construction, submitted proof or refutation, exact direct dependency statements, semantic context, external basis, checker contract, and protocol. It does not contain dependency proof text, dependency verification state, or a transitive proof closure. Changing an upstream proof while preserving its statement therefore recomputes global state without invalidating unchanged downstream local decisions. Changing a direct dependency statement invalidates the affected local decisions.
+
+Global composition is deterministic. Every fact holds exactly one of these, first match wins:
+
+| Status | Holds when | What to do |
+|---|---|---|
+| `abandoned` | the fact carries `.abandon` | nothing; it is kept for memory only |
+| `broken` | the mechanical layer failed: shape, ID, date, an unresolved or out-of-scope reference, or a cycle | repair the fact |
+| `open` | there is nothing to check yet: no proof block, an empty one, or a `.draft` proof (an `.assumed` fact is not open — it composes as `verified`) | write the proof, or drop `.draft` |
+| `rejected` | the verifier found the proof or refutation wrong or incomplete | repair the argument |
+| `unverified` | the proof is ready but carries no verdict: not yet requested, no verifier configured, or the verifier failed | run inspection, or repair the verifier |
+| `blocked` | this proof was accepted, or is `.assumed`, but some direct dependency is not globally verified | fix the upstream fact |
+| `verified` / `disproved` | the verdict is conclusive (or the fact is `.assumed`) and the whole direct dependency closure is globally verified | nothing |
+
+An `.assumed` fact composes exactly as a `verified` one: `blocked` while anything it cites is unproved, `verified` once the closure is clear. It is never sent to the verifier, so its `local` stays `not-run` with reason `assumed`. Every fact carries `global_verification.assumptions`, the sorted `.assumed` facts in its closure; a `verified` fact with a non-empty footprint is reported as `verified modulo N assumptions`, never as a bare `verified`. Run `qmd-prover dependency assumptions @ID` to list what a fact rests on, `--set assumed` to list the commitments themselves. A project may set `verification.assumptions: forbid` to make any assumption under a protected goal the `GOAL_ASSUMED` error.
+
+Rule order matters: an accepted refutation resting on an unproved lemma is `blocked`, not `disproved`, and citing an `abandoned` fact blocks the citer, because an abandoned proof is not a premise. Without a configured verifier, machine inspection still succeeds when its own inputs are valid, every local result is `not-run`, and every ready fact stays `unverified`. `ok` reports whether the requested inspection operation and configured verifier execution completed without machine or verifier-infrastructure errors; read `global_verification`, not `ok`, as the mathematical status.
+
+A narrow fact or path inspection verifies only the selected facts and their transitive local dependency closure; it never verifies reverse dependencies or unrelated facts.
+
+Apply these rules:
+
+1. State agent-created mathematics precisely: introduce notation, scope variables, include every nontrivial hypothesis, and justify reductions, existence, finiteness, well-definedness, and limit passages.
+2. Identify external theorems precisely enough to check applicability. Keep examples, computations, and intuition distinct from a general proof.
+3. If a main goal appears false, preserve it, place a precise refutation in its proof overlay with `.disproof` on that `.proof` div, and run inspection. Report the refutation as globally established only when `global_verification.status` is `disproved`; a local disproof with blocked dependencies remains conditional. Change the protected statement only with explicit user approval.
+4. Keep prose mathematical and readable. Workflow state lives only in the `.disproof`/`.draft`/`.assumed`/`.abandon` div attributes, so keep verifier metadata, search notes, and confidence claims out of declaration and proof bodies.
+5. Before relying on a fact, inspect its global state. Use it as an established premise only when `global_verification.status` is `verified`. A local conditional pass is not enough, and a globally disproved fact is evidence about the false statement, not a usable dependency.
+6. Repair every mechanical diagnostic and every local verifier critical error or gap. An unconfigured verifier is a supported machine-only mode and leaves local/global verification incomplete. If the user requests AI verification and the verifier is missing, failing, or malformed, repair `verification.command` or `QMD_PROVER_VERIFIER`; do not loop and do not declare the result verified yourself.
+
+`inspect project` compiles every project QMD file into one graph, runs machine analysis and optional local conditional verification for every fact, and returns a lean summary view: a summary, the goals, one compact status row per fact, finding counts, and verification totals. Pass `--graph` for the full dependency graph, which is also written to `.qmd-prover/graph.json`. One malformed file does not suppress results elsewhere. Operational success does not imply that every goal is globally verified; inspect each goal's global field and blockers.
+
+`inspect fact @ID` locates any explicit declaration, including a protected main goal; for a goal it uses the goal's linked proof overlay and user notes stay byte-for-byte unchanged. `inspect path` applies the full semantic contract to the facts declared under any project file or folder.
+
+Dependency commands use the published project graph. If an explicit semantic ID is declared more than once, dependency analysis stops until the conflicting declarations are renamed. These conditions are command diagnostics, not source markers, and are never written into QMD.
+
+`check staleness` is read-only. It audits the exact verification caches against current sources, the external basis, and the checker contract; it never edits user QMD or markers.
+
+## Agent workflow
+
+Load the `qmd-prover` skill and let the user work in natural language. qmd-prover does not prescribe a fixed proof strategy: the user may supply one theorem, a family of goals, an existing development, or an idea from which the agent formulates precise definitions and results. Choose the order and granularity of the mathematics from the developing argument.
+
+Inspection is your debugger: after each coherent unit of work, run the narrowest useful inspection and repair what it flags before building further on it, rather than writing an entire development and checking only at the end. A coherent unit may be a single step or a large batch of new material — size it to the argument, not to an arbitrary small increment. The independent verifier is a referee that reviews the exact proof or refutation you submit, resolving each cited `@id` against the statement it names; treat its verdicts as informal AI review over the citation-derived dependency graph, never as formal proof.
+
+Before proof work, compare this managed block with the skill's canonical contract and read the external-basis policy. Reuse that successful preflight only while the agent, project, branch, worktree, `AGENTS.md`, and external policy remain unchanged. Every independent agent must perform the preflight for itself.
+
+Use project inspection for deliberate whole-project audits, fact or path inspection for iteration, dependency queries for graph analysis, and rendering for generated status/navigation views. Translate dispatcher JSON into ordinary language; do not require the user to learn the commands.
+
+The safety gates remain mandatory: never edit a protected user statement, never use a merely local, stale, blocked, or unverified claim as established, never describe AI review as formal truth, and never bypass exact-cache freshness, local verification integrity, deterministic global composition, rejection safety, or atomic snapshot publication.
+
+<!-- qmd-prover-contract:end -->
+
+## Project-specific additions
+
+Add local rules after the managed block without changing it. For example:
+
+```markdown
+## Local project policy
+
+- Put algebraic-geometry sources under `workspace/geometry/`.
+- Use `workspace/foundations/notation.qmd` for shared notation.
+- Write theorem captions in English and surrounding exposition in Chinese.
+- Do not introduce new subject folders without asking the user.
+```
+
+Local additions may strengthen organization and writing requirements, but they must not weaken or contradict the managed qmd-prover contract.

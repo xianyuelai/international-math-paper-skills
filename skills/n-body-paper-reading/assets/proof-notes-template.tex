@@ -1,0 +1,66 @@
+\documentclass[UTF8]{ctexart}
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{amsmath,amssymb,amsthm,mathtools}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{论文证明树笔记：<paper title>}
+\author{Codex 阅读笔记}
+\date{\today}
+
+\newcommand{\claim}[1]{\paragraph{命题：}#1}
+\newcommand{\role}[1]{\paragraph{作用：}#1}
+\newcommand{\deps}[1]{\paragraph{依赖：}#1}
+\newcommand{\source}[1]{\paragraph{来源：}#1}
+
+\begin{document}
+\maketitle
+
+\section{论文信息}
+\begin{itemize}[leftmargin=2em]
+  \item 标题：<title>
+  \item 作者：<authors>
+  \item arXiv：<arxiv id>
+  \item PDF：\texttt{<pdf path>}
+  \item 源码目录：\texttt{<source dir>}
+\end{itemize}
+
+\section{主定理}
+\claim{<用自己的话陈述主结论。>}
+\role{<说明该结论解决的问题，以及它相比已有工作的推进。>}
+
+\section{证明树总览}
+\begin{enumerate}[label=\textbf{T\arabic*.}, leftmargin=2.5em]
+  \item <主定理>
+  \begin{enumerate}[label*=\textbf{.\arabic*}, leftmargin=2.5em]
+    \item <关键归约>
+    \item <核心技术定理>
+    \item <从核心定理推出主定理>
+  \end{enumerate}
+\end{enumerate}
+
+\section{节点详解}
+
+\subsection{节点 1：<名称>}
+\source{\texttt{<tex file>}，标签 \texttt{<label>}，或章节 <section>.}
+\claim{<该节点的数学断言。>}
+\deps{<它依赖哪些定义、引理、定理或外部文献。>}
+\role{<它在整棵证明树中的位置。>}
+
+\section{关键公式与估计}
+\begin{align*}
+  <formula>
+\end{align*}
+
+\section{主要创新}
+\begin{itemize}[leftmargin=2em]
+  \item <创新点 1>
+  \item <创新点 2>
+\end{itemize}
+
+\section{待核对}
+\begin{itemize}[leftmargin=2em]
+  \item <不确定点、需要补读的引理或外部文献。>
+\end{itemize}
+
+\end{document}
